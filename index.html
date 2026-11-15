@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Euromel One - Facturación</title>
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Librerías externas -->
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        :root {
+            --primary: #1A3E72; /* Azul Euromel */
+            --secondary: #4CAF50; /* Verde Euromel */
+            --bg: #f4f7f6;
+            --text: #333;
+            --border: #ddd;
+        }
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; }
+        body { background-color: var(--bg); color: var(--text); padding-bottom: 70px; }
+        
+        /* Cabecera */
+        header { background-color: var(--primary); color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; justify-content: space-between; align-items: center; }
+        header h1 { font-size: 1.2rem; margin: 0; }
+        #header-logo { max-height: 40px; display: none; }
+
+        /* Navegación Inferior */
+        nav { position: fixed; bottom: 0; width: 100%; background: white; display: flex; justify-content: space-around; padding: 10px 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 100; }
+        nav button { background: none; border: none; font-size: 0.8rem; color: #777; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+        nav button.active { color: var(--primary); font-weight: bold; }
+        nav button svg { width: 24px; height: 24px; margin-bottom: 4px; fill: currentColor; }
+
+        /* Contenedores */
+        .container { padding: 15px; display: none; }
+        .container.active { display: block; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Formularios */
+        .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        .form-group { margin-bottom: 12px; }
+        label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; color: #555; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 5px; font-size: 1rem; }
+        button.btn { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 5px; font-size: 1rem; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        button.btn-sec { background: var(--secondary); }
+        button.btn-danger { background: #d32f2f; }
+        button.btn-sm { width: auto; padding: 8px 12px; font-size: 0.9rem; margin: 0; }
+
+        /* Tablas */
+        table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+        th, td { border: 1px solid var(--border); padding: 8px; text-align: left; font-size: 0.9rem; }
+        th { background: #eee; }
+        .item-row input { padding: 5px; font-size: 0.85rem; }
+
+        /* Listas */
+        .list-item { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; }
+        .list-item-info h3 { font-size: 1rem; margin-bottom: 5px; color: var(--primary); }
+        .list-item-info p { font-size: 0.85rem; color: #666; }
+
+        /* PDF Template (Oculto en pantalla) */
+        #pdf-container { position: absolute; left: -9999px; top: 0; width: 800px; background: white; padding: 40px; font-family: Arial, sans-serif; color: #000; }
+        .pdf-header { display: flex; justify-content: space-between; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+        .pdf-logo img { max-width: 200px; }
+        .pdf-title h1 { font-size: 32px; text-align: right; margin-bottom: 5px; }
+        .pdf-title p { text-align: right; font-size: 14px; }
+        .pdf-client-box { border: 1px solid #000; padding: 10px; width: 60%; margin-bottom: 20px; font-size: 12px; }
+        .pdf-client-box strong { display: inline-block; width: 100px; }
+        .pdf-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
+        .pdf-table th { background: #e0e0e0; border: 1px solid #000; padding: 5px; text-align: center; }
+        .pdf-table td { border: 1px solid #000; padding: 5px; }
+        .pdf-footer { display: flex; justify-content: space-between; font-size: 12px; border-top: 2px solid #000; padding-top: 10px; }
+        .pdf-totals { width: 30%; }
+        .pdf-totals table { border: none; }
+        .pdf-totals td { border: none; padding: 2px 5px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Euromel One</h1>
+        <img id="header-logo" src="" alt="Logo">
+    </header>
+
+    <!-- VENTANA: INICIO -->
+    <div id="view-inicio" class="container active">
+        <div class="card">
+            <h2>Bienvenido</h2>
+            <p>Selecciona una opción en el menú inferior para empezar a trabajar.</p>
+        </div>
+        <div class="card">
+            <h3>Resumen Rápido</h3>
+            <p>Facturas emitidas: <strong id="count-invoices">0</strong></p>
+            <p>CMRs emitidos: <strong id="count-cmrs">0</strong></p>
+        </div>
+    </div>
+
+    <!-- VENTANA: FACTURAS -->
+    <div id="view-facturas" class="container">
+        <button class="btn btn-sec" onclick="showInvoiceForm()">+ Nueva Factura</button>
+        <div id="lista-facturas" style="margin-top: 15px;"></div>
+    </div>
+
+    <!-- VENTANA: FORMULARIO FACTURA -->
+    <div id="view-factura-form" class="container">
+        <div class="card">
+            <h2 id="fact-title">Nueva Factura</h2>
+            <input type="hidden" id="fact-id">
+            
+            <div class="form-group">
+                <label>Nº Factura</label>
+                <input type="text" id="fact-numero" placeholder="2026-031">
+            </div>
+            
+            <div style="display: flex; gap: 10px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Fecha Emisión</label>
+                    <input type="date" id="fact-fecha">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Fecha Vencimiento</label>
+                    <input type="date" id="fact-vencimiento">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Cliente</label>
+                <select id="fact-cliente"></select>
+                <button type="button" class="btn btn-sm" onclick="showClientForm()" style="margin-top:5px; background:#555;">+ Nuevo Cliente</button>
+            </div>
+
+            <h3>Líneas</h3>
+            <table id="tabla-lineas">
+                <thead>
+                    <tr>
+                        <th>Descripción</th>
+                        <th>Cant.</th>
+                        <th>Precio</th>
+                        <th>Dto %</th>
+                        <th>Impuesto</th>
+                        <th>Total</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="body-lineas"></tbody>
+            </table>
+            <button type="button" class="btn" onclick="addLinea()" style="background: #555;">+ Añadir Línea</button>
+
+            <div class="form-group" style="margin-top: 15px;">
+                <label>Observaciones</label>
+                <textarea id="fact-obs" rows="2"></textarea>
+            </div>
+
+            <div class="card" style="background: #eee;">
+                <p style="text-align: right;">Base: <strong id="calc-base">0,00 €</strong></p>
+                <p style="text-align: right;">Impuestos: <strong id="calc-impuestos">0,00 €</strong></p>
+                <p style="text-align: right; font-size: 1.2rem;">TOTAL: <strong id="calc-total">0,00 €</strong></p>
+            </div>
+
+            <button class="btn" onclick="saveInvoice()">Guardar Factura</button>
+            <button class="btn btn-sec" onclick="generatePDF()">Generar PDF</button>
+            <button class="btn" style="background: #777;" onclick="switchTab('facturas')">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- VENTANA: CLIENTES -->
+    <div id="view-clientes" class="container">
+        <button class="btn btn-sec" onclick="showClientForm()">+ Nuevo Cliente</button>
+        <div id="lista-clientes" style="margin-top: 15px;"></div>
+    </div>
+
+    <!-- VENTANA: FORMULARIO CLIENTE -->
+    <div id="view-cliente-form" class="container">
+        <div class="card">
+            <h2>Datos del Cliente</h2>
+            <input type="hidden" id="client-id">
+            <div class="form-group">
+                <label>Nombre / Razón Social</label>
+                <input type="text" id="client-nombre">
+            </div>
+            <div class="form-group">
+                <label>NIF / CIF</label>
+                <input type="text" id="client-nif">
+            </div>
+            <div class="form-group">
+                <label>Dirección</label>
+                <input type="text" id="client-direccion">
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>CP</label>
+                    <input type="text" id="client-cp">
+                </div>
+                <div class="form-group" style="flex: 2;">
+                    <label>Ciudad</label>
+                    <input type="text" id="client-ciudad">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Provincia / País</label>
+                <input type="text" id="client-provincia" placeholder="Ej: Melilla - España">
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="client-email">
+            </div>
+            <button class="btn" onclick="saveClient()">Guardar Cliente</button>
+            <button class="btn" style="background: #777;" onclick="switchTab('clientes')">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- VENTANA: CMR -->
+    <div id="view-cmr" class="container">
+        <button class="btn btn-sec" onclick="showCMRForm()">+ Nuevo CMR</button>
+        <div id="lista-cmr" style="margin-top: 15px;"></div>
+    </div>
+
+    <!-- VENTANA: FORMULARIO CMR -->
+    <div id="view-cmr-form" class="container">
+        <div class="card">
+            <h2>Nuevo CMR</h2>
+            <input type="hidden" id="cmr-id">
+            <div class="form-group">
+                <label>Nº CMR</label>
+                <input type="text" id="cmr-numero" placeholder="CMR-2026-001">
+            </div>
+            <div class="form-group">
+                <label>Fecha</label>
+                <input type="date" id="cmr-fecha">
+            </div>
+            <div class="form-group">
+                <label>Expedidor (Remitente)</label>
+                <input type="text" id="cmr-expedidor" value="Euromel One S.L.">
+            </div>
+            <div class="form-group">
+                <label>Destinatario</label>
+                <input type="text" id="cmr-destinatario">
+            </div>
+            <div class="form-group">
+                <label>Lugar de Entrega</label>
+                <input type="text" id="cmr-lugar-entrega">
+            </div>
+            <div class="form-group">
+                <label>Matrícula Vehículo</label>
+                <input type="text" id="cmr-matricula">
+            </div>
+            <div class="form-group">
+                <label>Mercancía (Descripción)</label>
+                <textarea id="cmr-mercancia" rows="2"></textarea>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Bultos</label>
+                    <input type="number" id="cmr-bultos">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Peso (kg)</label>
+                    <input type="number" id="cmr-peso">
+                </div>
+            </div>
+            <button class="btn" onclick="saveCMR()">Guardar CMR</button>
+            <button class="btn" style="background: #777;" onclick="switchTab('cmr')">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- VENTANA: CONFIGURACIÓN -->
+    <div id="view-config" class="container">
+        <div class="card">
+            <h2>Datos de la Empresa</h2>
+            <div class="form-group">
+                <label>Logotipo (Sube tu imagen)</label>
+                <input type="file" id="conf-logo" accept="image/*" onchange="uploadLogo(event)">
+            </div>
+            <div class="form-group">
+                <label>Nombre Fiscal</label>
+                <input type="text" id="conf-nombre" value="Euromel One S.L.">
+            </div>
+            <div class="form-group">
+                <label>NIF / CIF</label>
+                <input type="text" id="conf-nif" value="B75312736">
+            </div>
+            <div class="form-group">
+                <label>Dirección</label>
+                <input type="text" id="conf-direccion" value="Calle F de Crtra. de Farhana, 4A">
+            </div>
+            <div class="form-group">
+                <label>Ciudad / CP / Provincia</label>
+                <input type="text" id="conf-ciudad" value="52005 - Melilla - Melilla">
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="text" id="conf-email" value="euromel2024@gmail.com">
+            </div>
+            <div class="form-group">
+                <label>Teléfono</label>
+                <input type="text" id="conf-telefono" value="622211186">
+            </div>
+            <div class="form-group">
+                <label>IBAN (Para el pie de factura)</label>
+                <input type="text" id="conf-iban" placeholder="ES00 0000 0000 0000 0000 0000">
+            </div>
+            <div class="form-group">
+                <label>Banco</label>
+                <input type="text" id="conf-banco" placeholder="Nombre del banco">
+            </div>
+            <button class="btn" onclick="saveConfig()">Guardar Configuración</button>
+        </div>
+        
+        <div class="card">
+            <h2>Backup de Datos</h2>
+            <button class="btn" onclick="exportData()">Exportar Copia de Seguridad</button>
+        </div>
+    </div>
+
+    <!-- NAVEGACIÓN -->
+    <nav>
+        <button onclick="switchTab('inicio')" id="nav-inicio" class="active">
+            <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+            Inicio
+        </button>
+        <button onclick="switchTab('facturas')" id="nav-facturas">
+            <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+            Facturas
+        </button>
+        <button onclick="switchTab('clientes')" id="nav-clientes">
+            <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+            Clientes
+        </button>
+        <button onclick="switchTab('cmr')" id="nav-cmr">
+            <svg viewBox="0 0 24 24"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+            CMR
+        </button>
+        <button onclick="switchTab('config')" id="nav-config">
+            <svg viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.73,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.06,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.43-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.49-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
+            Config
+        </button>
+    </nav>
+
+    <!-- ÁREA OCULTA PARA GENERAR PDF -->
+    <div id="pdf-container">
+        <div class="pdf-header">
+            <div class="pdf-logo"><img id="pdf-logo-img" src="" alt="Logo"></div>
+            <div class="pdf-title">
+                <h1>FACTURA</h1>
+                <p>ORIGINAL</p>
+            </div>
+        </div>
+        
+        <div class="pdf-client-box">
+            <div style="display: flex; justify-content: space-between;">
+                <div>
+                    <p><strong>Cliente:</strong> <span id="pdf-client-nombre"></span></p>
+                    <p><strong>Dirección:</strong> <span id="pdf-client-dir"></span></p>
+                    <p><span id="pdf-client-ciudad"></span></p>
+                    <p><strong>Teléfono:</strong> </p>
+                </div>
+                <div>
+                    <p><strong>NIF:</strong> <span id="pdf-client-nif"></span></p>
+                    <p><strong>Email:</strong> <span id="pdf-client-email"></span></p>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 14px;">
+            <div>
+                <p><strong>Factura Nº:</strong> <span id="pdf-numero"></span></p>
+                <p><strong>Fecha:</strong> <span id="pdf-fecha"></span></p>
+            </div>
+            <div>
+                <p><strong>Vencimiento:</strong> <span id="pdf-vencimiento"></span></p>
+            </div>
+        </div>
+
+        <table class="pdf-table">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Descripción</th>
+                    <th>Cant.</th>
+                    <th>Precio</th>
+                    <th>Dto (%)</th>
+                    <th>IPSI (%)</th>
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody id="pdf-lineas"></tbody>
+        </table>
+
+        <div style="margin-bottom: 20px; font-size: 12px;">
+            <p><strong>Observaciones:</strong></p>
+            <p id="pdf-obs"></p>
+        </div>
+
+        <div class="pdf-footer">
+            <div>
+                <p><strong>Forma de pago:</strong> Transferencia</p>
+                <p><strong>IBAN:</strong> <span id="pdf-iban"></span></p>
+                <p><strong>Banco:</strong> <span id="pdf-banco"></span></p>
+            </div>
+            <div class="pdf-totals">
+                <table>
+                    <tr><td>Subtotal</td><td style="text-align: right;" id="pdf-subtotal"></td></tr>
+                    <tr><td>Impuestos</td><td style="text-align: right;" id="pdf-impuestos"></td></tr>
+                    <tr style="font-weight: bold; font-size: 14px; border-top: 1px solid #000;">
+                        <td>TOTAL</td><td style="text-align: right;" id="pdf-total"></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Inicializar Base de Datos
+        const db = new Dexie('EuromelDB');
+        db.version(1).stores({
+            config: 'key',
+            clientes: '++id, nombre',
+            facturas: '++id, numero, clienteId',
+            cmrs: '++id, numero'
+        });
+
+        let currentTab = 'inicio';
+        let currentInvoiceLines = [];
+        let appConfig = {};
+
+        // --- NAVEGACIÓN ---
+        function switchTab(tab) {
+            document.querySelectorAll('.container').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+            
+            if(tab === 'factura-form') document.getElementById('view-factura-form').classList.add('active');
+            else if(tab === 'cliente-form') document.getElementById('view-cliente-form').classList.add('active');
+            else if(tab === 'cmr-form') document.getElementById('view-cmr-form').classList.add('active');
+            else {
+                document.getElementById(`view-${tab}`).classList.add('active');
+                document.getElementById(`nav-${tab}`).classList.add('active');
+            }
+            currentTab = tab;
+
+            if(tab === 'inicio') loadDashboard();
+            if(tab === 'facturas') loadInvoices();
+            if(tab === 'clientes') loadClients();
+            if(tab === 'cmr') loadCMRs();
+            if(tab === 'config') loadConfigUI();
+        }
+
+        // --- CONFIGURACIÓN ---
+        async function loadConfig() {
+            const conf = await db.config.toArray();
+            appConfig = {};
+            conf.forEach(c => appConfig[c.key] = c.value);
+            
+            if(appConfig.logo) {
+                document.getElementById('header-logo').src = appConfig.logo;
+                document.getElementById('header-logo').style.display = 'block';
+                document.querySelector('header h1').style.display = 'none';
+            }
+        }
+
+        async function loadConfigUI() {
+            document.getElementById('conf-nombre').value = appConfig.nombre || 'Euromel One S.L.';
+            document.getElementById('conf-nif').value = appConfig.nif || 'B75312736';
+            document.getElementById('conf-direccion').value = appConfig.direccion || '';
+            document.getElementById('conf-ciudad').value = appConfig.ciudad || '';
+            document.getElementById('conf-email').value = appConfig.email || '';
+            document.getElementById('conf-telefono').value = appConfig.telefono || '';
+            document.getElementById('conf-iban').value = appConfig.iban || '';
+            document.getElementById('conf-banco').value = appConfig.banco || '';
+        }
+
+        async function saveConfig() {
+            const fields = ['nombre', 'nif', 'direccion', 'ciudad', 'email', 'telefono', 'iban', 'banco'];
+            for(let f of fields) {
+                await db.config.put({ key: f, value: document.getElementById(`conf-${f}`).value });
+            }
+            alert('Configuración guardada');
+            await loadConfig();
+        }
+
+        function uploadLogo(event) {
+            const file = event.target.files[0];
+            if(file) {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    const base64 = e.target.result;
+                    await db.config.put({ key: 'logo', value: base64 });
+                    await loadConfig();
+                    alert('Logo actualizado');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // --- CLIENTES ---
+        async function loadClients() {
+            const clients = await db.clientes.toArray();
+            const list = document.getElementById('lista-clientes');
+            list.innerHTML = clients.map(c => `
+                <div class="list-item">
+                    <div class="list-item-info">
+                        <h3>${c.nombre}</h3>
+                        <p>${c.nif} | ${c.ciudad}</p>
+                    </div>
+                </div>
+            `).join('');
+            
+            // Actualizar Select en factura
+            const select = document.getElementById('fact-cliente');
+            select.innerHTML = '<option value="">-- Seleccionar Cliente --</option>' + 
+                clients.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+        }
+
+        function showClientForm() {
+            document.getElementById('client-id').value = '';
+            document.getElementById('client-nombre').value = '';
+            document.getElementById('client-nif').value = '';
+            document.getElementById('client-direccion').value = '';
+            document.getElementById('client-cp').value = '';
+            document.getElementById('client-ciudad').value = '';
+            document.getElementById('client-provincia').value = '';
+            document.getElementById('client-email').value = '';
+            switchTab('cliente-form');
+        }
+
+        async function saveClient() {
+            const id = document.getElementById('client-id').value;
+            const data = {
+                nombre: document.getElementById('client-nombre').value,
+                nif: document.getElementById('client-nif').value,
+                direccion: document.getElementById('client-direccion').value,
+                cp: document.getElementById('client-cp').value,
+                ciudad: document.getElementById('client-ciudad').value,
+                provincia: document.getElementById('client-provincia').value,
+                email: document.getElementById('client-email').value
+            };
+
+            if(id) { data.id = parseInt(id); await db.clientes.put(data); }
+            else { await db.clientes.add(data); }
+
+            alert('Cliente guardado');
+            switchTab('clientes');
+        }
+
+        // --- FACTURAS ---
+        async function loadInvoices() {
+            const invoices = await db.facturas.toArray();
+            const clients = await db.clientes.toArray();
+            const list = document.getElementById('lista-facturas');
+            document.getElementById('count-invoices').innerText = invoices.length;
+
+            list.innerHTML = invoices.reverse().map(f => {
+                const client = clients.find(c => c.id === f.clienteId);
+                return `
+                <div class="list-item" onclick="editInvoice(${f.id})">
+                    <div class="list-item-info">
+                        <h3>Factura ${f.numero}</h3>
+                        <p>${client ? client.nombre : 'Cliente borrado'}</p>
+                        <p>${f.fecha} | Total: ${formatMoney(f.total)}</p>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        function showInvoiceForm() {
+            document.getElementById('fact-id').value = '';
+            document.getElementById('fact-numero').value = '2026-' + String(Math.floor(Math.random()*1000)).padStart(3, '0');
+            document.getElementById('fact-fecha').valueAsDate = new Date();
+            document.getElementById('fact-vencimiento').valueAsDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            document.getElementById('fact-obs').value = '';
+            currentInvoiceLines = [];
+            renderLines();
+            updateTotals();
+            switchTab('factura-form');
+            loadClients();
+        }
+
+        function addLinea() {
+            currentInvoiceLines.push({ desc: '', qty: 1, price: 0, disc: 0, tax: 0 });
+            renderLines();
+        }
+
+        function updateLinea(index, field, value) {
+            currentInvoiceLines[index][field] = value;
+            calculateLine(index);
+            updateTotals();
+        }
+
+        function calculateLine(index) {
+            const l = currentInvoiceLines[index];
+            const qty = parseFloat(l.qty) || 0;
+            const price = parseFloat(l.price) || 0;
+            const disc = parseFloat(l.disc) || 0;
+            
+            const base = (qty * price) - ((qty * price) * (disc / 100));
+            const total = base + (base * (parseFloat(l.tax) / 100));
+            
+            const tr = document.getElementById(`line-${index}`);
+            if(tr) tr.querySelector('.line-total').innerText = formatMoney(total);
+        }
+
+        function renderLines() {
+            const tbody = document.getElementById('body-lineas');
+            tbody.innerHTML = currentInvoiceLines.map((l, i) => `
+                <tr class="item-row" id="line-${i}">
+                    <td><input type="text" value="${l.desc}" onchange="updateLinea(${i}, 'desc', this.value)"></td>
+                    <td><input type="number" value="${l.qty}" onchange="updateLinea(${i}, 'qty', this.value)" style="width:60px"></td>
+                    <td><input type="number" value="${l.price}" onchange="updateLinea(${i}, 'price', this.value)" style="width:70px"></td>
+                    <td><input type="number" value="${l.disc}" onchange="updateLinea(${i}, 'disc', this.value)" style="width:50px"></td>
+                    <td>
+                        <select onchange="updateLinea(${i}, 'tax', this.value)">
+                            <option value="0" ${l.tax == 0 ? 'selected' : ''}>0%</option>
+                            <option value="4" ${l.tax == 4 ? 'selected' : ''}>IPSI 4%</option>
+                            <option value="10" ${l.tax == 10 ? 'selected' : ''}>IPSI 10%</option>
+                            <option value="21" ${l.tax == 21 ? 'selected' : ''}>IVA 21%</option>
+                        </select>
+                    </td>
+                    <td class="line-total">0,00 €</td>
+                    <td><button type="button" onclick="removeLinea(${i})" style="color:red; border:none; background:none; font-weight:bold;">X</button></td>
+                </tr>
+            `).join('');
+            currentInvoiceLines.forEach((_, i) => calculateLine(i));
+        }
+
+        function removeLinea(index) {
+            currentInvoiceLines.splice(index, 1);
+            renderLines();
+            updateTotals();
+        }
+
+        function updateTotals() {
+            let subtotal = 0;
+            let impuestos = 0;
+            
+            currentInvoiceLines.forEach(l => {
+                const qty = parseFloat(l.qty) || 0;
+                const price = parseFloat(l.price) || 0;
+                const disc = parseFloat(l.disc) || 0;
+                const base = (qty * price) - ((qty * price) * (disc / 100));
+                
+                subtotal += base;
+                impuestos += base * ((parseFloat(l.tax) || 0) / 100);
+            });
+
+            const total = subtotal + impuestos;
+            
+            document.getElementById('calc-base').innerText = formatMoney(subtotal);
+            document.getElementById('calc-impuestos').innerText = formatMoney(impuestos);
+            document.getElementById('calc-total').innerText = formatMoney(total);
+            
+            return { subtotal, impuestos, total };
+        }
+
+        async function saveInvoice() {
+            const id = document.getElementById('fact-id').value;
+            const totales = updateTotals();
+            
+            const data = {
+                numero: document.getElementById('fact-numero').value,
+                fecha: document.getElementById('fact-fecha').value,
+                vencimiento: document.getElementById('fact-vencimiento').value,
+                clienteId: parseInt(document.getElementById('fact-cliente').value),
+                obs: document.getElementById('fact-obs').value,
+                lineas: currentInvoiceLines,
+                subtotal: totales.subtotal,
+                impuestos: totales.impuestos,
+                total: totales.total
+            };
+
+            if(!data.clienteId) return alert('Selecciona un cliente');
+
+            if(id) { data.id = parseInt(id); await db.facturas.put(data); }
+            else { await db.facturas.add(data); }
+
+            alert('Factura guardada correctamente');
+            switchTab('facturas');
+        }
+
+        async function editInvoice(id) {
+            const f = await db.facturas.get(id);
+            document.getElementById('fact-id').value = f.id;
+            document.getElementById('fact-numero').value = f.numero;
+            document.getElementById('fact-fecha').value = f.fecha;
+            document.getElementById('fact-vencimiento').value = f.vencimiento;
+            document.getElementById('fact-obs').value = f.obs;
+            
+            await loadClients();
+            document.getElementById('fact-cliente').value = f.clienteId;
+            
+            currentInvoiceLines = f.lineas || [];
+            renderLines();
+            updateTotals();
+            switchTab('factura-form');
+        }
+
+        // --- GENERAR PDF ---
+        async function generatePDF() {
+            const clientId = parseInt(document.getElementById('fact-cliente').value);
+            if(!clientId) return alert('Selecciona un cliente para generar el PDF');
+            
+            const client = await db.clientes.get(clientId);
+            const totales = updateTotals();
+
+            // Rellenar plantilla PDF
+            if(appConfig.logo) document.getElementById('pdf-logo-img').src = appConfig.logo;
+            
+            document.getElementById('pdf-client-nombre').innerText = client.nombre;
+            document.getElementById('pdf-client-nif').innerText = client.nif;
+            document.getElementById('pdf-client-dir').innerText = client.direccion;
+            document.getElementById('pdf-client-ciudad').innerText = `${client.cp} ${client.ciudad} ${client.provincia}`;
+            document.getElementById('pdf-client-email').innerText = client.email;
+
+            document.getElementById('pdf-numero').innerText = document.getElementById('fact-numero').value;
+            document.getElementById('pdf-fecha').innerText = document.getElementById('fact-fecha').value;
+            document.getElementById('pdf-vencimiento').innerText = document.getElementById('fact-vencimiento').value;
+            document.getElementById('pdf-obs').innerText = document.getElementById('fact-obs').value;
+            
+            document.getElementById('pdf-iban').innerText = appConfig.iban || '-----------------';
+            document.getElementById('pdf-banco').innerText = appConfig.banco || '-----------------';
+
+            const pdfLineas = document.getElementById('pdf-lineas');
+            pdfLineas.innerHTML = currentInvoiceLines.map(l => {
+                const qty = parseFloat(l.qty) || 0;
+                const price = parseFloat(l.price) || 0;
+                const disc = parseFloat(l.disc) || 0;
+                const base = (qty * price) - ((qty * price) * (disc / 100));
+                const total = base + (base * ((parseFloat(l.tax) || 0) / 100));
+                
+                return `
+                    <tr>
+                        <td></td>
+                        <td>${l.desc}</td>
+                        <td style="text-align:center">${l.qty}</td>
+                        <td style="text-align:right">${formatMoney(price)}</td>
+                        <td style="text-align:center">${l.disc}</td>
+                        <td style="text-align:center">${l.tax}</td>
+                        <td style="text-align:right">${formatMoney(total)}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('pdf-subtotal').innerText = formatMoney(totales.subtotal);
+            document.getElementById('pdf-impuestos').innerText = formatMoney(totales.impuestos);
+            document.getElementById('pdf-total').innerText = formatMoney(totales.total);
+
+            // Generar
+            const element = document.getElementById('pdf-container');
+            const opt = {
+                margin:       0,
+                filename:     `Factura_${document.getElementById('fact-numero').value}.pdf`,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2 },
+                jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+            };
+
+            html2pdf().set(opt).from(element).save();
+        }
+
+        // --- CMR (Lógica Básica) ---
+        async function loadCMRs() {
+            const cmrs = await db.cmrs.toArray();
+            document.getElementById('count-cmrs').innerText = cmrs.length;
+            document.getElementById('lista-cmr').innerHTML = cmrs.map(c => `
+                <div class="list-item">
+                    <div class="list-item-info">
+                        <h3>CMR ${c.numero}</h3>
+                        <p>${c.fecha} | Dest: ${c.destinatario}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showCMRForm() {
+            document.getElementById('cmr-id').value = '';
+            document.getElementById('cmr-numero').value = 'CMR-2026-' + String(Math.floor(Math.random()*1000)).padStart(3, '0');
+            document.getElementById('cmr-fecha').valueAsDate = new Date();
+            document.getElementById('cmr-destinatario').value = '';
+            document.getElementById('cmr-lugar-entrega').value = '';
+            document.getElementById('cmr-matricula').value = '';
+            document.getElementById('cmr-mercancia').value = '';
+            document.getElementById('cmr-bultos').value = '';
+            document.getElementById('cmr-peso').value = '';
+            switchTab('cmr-form');
+        }
+
+        async function saveCMR() {
+            const data = {
+                numero: document.getElementById('cmr-numero').value,
+                fecha: document.getElementById('cmr-fecha').value,
+                expedidor: document.getElementById('cmr-expedidor').value,
+                destinatario: document.getElementById('cmr-destinatario').value,
+                lugarEntrega: document.getElementById('cmr-lugar-entrega').value,
+                matricula: document.getElementById('cmr-matricula').value,
+                mercancia: document.getElementById('cmr-mercancia').value,
+                bultos: document.getElementById('cmr-bultos').value,
+                peso: document.getElementById('cmr-peso').value
+            };
+            await db.cmrs.add(data);
+            alert('CMR guardado');
+            switchTab('cmr');
+        }
+
+        // --- UTILS ---
+        function formatMoney(num) {
+            return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(num);
+        }
+
+        async function exportData() {
+            const data = {
+                config: await db.config.toArray(),
+                clientes: await db.clientes.toArray(),
+                facturas: await db.facturas.toArray(),
+                cmrs: await db.cmrs.toArray()
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Euromel_Backup_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+        }
+
+        // --- INICIALIZACIÓN ---
+        window.onload = async () => {
+            await loadConfig();
+            loadDashboard();
+            // Registrar Service Worker para PWA
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('sw.js').catch(err => console.log('SW error', err));
+            }
+        };
+
+        async function loadDashboard() {
+            const inv = await db.facturas.count();
+            const cmr = await db.cmrs.count();
+            document.getElementById('count-invoices').innerText = inv;
+            document.getElementById('count-cmrs').innerText = cmr;
+        }
+    </script>
+</body>
+</html>
