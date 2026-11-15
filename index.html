@@ -6,11 +6,13 @@
     <title>Euromel One - Facturación</title>
     <link rel="manifest" href="manifest.json">
     
-    <!-- Librerías externas -->
+    <!-- Librerías externas necesarias -->
     <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <style>
+        /* --- CSS: DISEÑO DE LA APP --- */
         :root {
             --primary: #1A3E72; /* Azul Euromel */
             --secondary: #4CAF50; /* Verde Euromel */
@@ -28,37 +30,39 @@
 
         /* Navegación Inferior */
         nav { position: fixed; bottom: 0; width: 100%; background: white; display: flex; justify-content: space-around; padding: 10px 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 100; }
-        nav button { background: none; border: none; font-size: 0.8rem; color: #777; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+        nav button { background: none; border: none; font-size: 0.75rem; color: #777; display: flex; flex-direction: column; align-items: center; cursor: pointer; width: 20%; }
         nav button.active { color: var(--primary); font-weight: bold; }
         nav button svg { width: 24px; height: 24px; margin-bottom: 4px; fill: currentColor; }
 
-        /* Contenedores */
+        /* Contenedores de Ventanas */
         .container { padding: 15px; display: none; }
         .container.active { display: block; animation: fadeIn 0.3s; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-        /* Formularios */
+        /* Formularios y Tarjetas */
         .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px; }
         .form-group { margin-bottom: 12px; }
         label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; color: #555; }
-        input, select, textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 5px; font-size: 1rem; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 5px; font-size: 1rem; background: white; }
+        
+        /* Botones */
         button.btn { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 5px; font-size: 1rem; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; }
         button.btn-sec { background: var(--secondary); }
         button.btn-danger { background: #d32f2f; }
         button.btn-sm { width: auto; padding: 8px 12px; font-size: 0.9rem; margin: 0; }
 
-        /* Tablas */
+        /* Tablas de Líneas */
         table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
         th, td { border: 1px solid var(--border); padding: 8px; text-align: left; font-size: 0.9rem; }
         th { background: #eee; }
         .item-row input { padding: 5px; font-size: 0.85rem; }
 
-        /* Listas */
-        .list-item { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; }
+        /* Listas (Facturas, Clientes) */
+        .list-item { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
         .list-item-info h3 { font-size: 1rem; margin-bottom: 5px; color: var(--primary); }
         .list-item-info p { font-size: 0.85rem; color: #666; }
 
-        /* PDF Template (Oculto en pantalla) */
+        /* PDF Template (Oculto en pantalla, visible al generar) */
         #pdf-container { position: absolute; left: -9999px; top: 0; width: 800px; background: white; padding: 40px; font-family: Arial, sans-serif; color: #000; }
         .pdf-header { display: flex; justify-content: space-between; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
         .pdf-logo img { max-width: 200px; }
@@ -77,6 +81,7 @@
 </head>
 <body>
 
+    <!-- CABECERA -->
     <header>
         <h1>Euromel One</h1>
         <img id="header-logo" src="" alt="Logo">
@@ -85,8 +90,8 @@
     <!-- VENTANA: INICIO -->
     <div id="view-inicio" class="container active">
         <div class="card">
-            <h2>Bienvenido</h2>
-            <p>Selecciona una opción en el menú inferior para empezar a trabajar.</p>
+            <h2>Bienvenido a Euromel One</h2>
+            <p>Gestiona tus facturas, clientes y transportes desde tu móvil.</p>
         </div>
         <div class="card">
             <h3>Resumen Rápido</h3>
@@ -129,21 +134,23 @@
                 <button type="button" class="btn btn-sm" onclick="showClientForm()" style="margin-top:5px; background:#555;">+ Nuevo Cliente</button>
             </div>
 
-            <h3>Líneas</h3>
-            <table id="tabla-lineas">
-                <thead>
-                    <tr>
-                        <th>Descripción</th>
-                        <th>Cant.</th>
-                        <th>Precio</th>
-                        <th>Dto %</th>
-                        <th>Impuesto</th>
-                        <th>Total</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody id="body-lineas"></tbody>
-            </table>
+            <h3>Líneas de Factura</h3>
+            <div style="overflow-x: auto;">
+                <table id="tabla-lineas">
+                    <thead>
+                        <tr>
+                            <th>Descripción</th>
+                            <th>Cant.</th>
+                            <th>Precio</th>
+                            <th>Dto %</th>
+                            <th>Impuesto</th>
+                            <th>Total</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="body-lineas"></tbody>
+                </table>
+            </div>
             <button type="button" class="btn" onclick="addLinea()" style="background: #555;">+ Añadir Línea</button>
 
             <div class="form-group" style="margin-top: 15px;">
@@ -218,7 +225,7 @@
     <!-- VENTANA: FORMULARIO CMR -->
     <div id="view-cmr-form" class="container">
         <div class="card">
-            <h2>Nuevo CMR</h2>
+            <h2>Nuevo CMR (Carta de Porte)</h2>
             <input type="hidden" id="cmr-id">
             <div class="form-group">
                 <label>Nº CMR</label>
@@ -307,12 +314,15 @@
         </div>
         
         <div class="card">
-            <h2>Backup de Datos</h2>
-            <button class="btn" onclick="exportData()">Exportar Copia de Seguridad</button>
+            <h2>Backup de Datos (Copia de Seguridad)</h2>
+            <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">Guarda tus clientes, facturas y configuración en un archivo seguro.</p>
+            <button class="btn" onclick="exportDataZIP()">📦 Exportar Copia (ZIP)</button>
+            <button class="btn btn-sec" onclick="document.getElementById('import-file').click()">📥 Importar Copia</button>
+            <input type="file" id="import-file" accept=".zip,.json" style="display: none;" onchange="importData(event)">
         </div>
     </div>
 
-    <!-- NAVEGACIÓN -->
+    <!-- MENÚ INFERIOR DE NAVEGACIÓN -->
     <nav>
         <button onclick="switchTab('inicio')" id="nav-inicio" class="active">
             <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
@@ -336,7 +346,7 @@
         </button>
     </nav>
 
-    <!-- ÁREA OCULTA PARA GENERAR PDF -->
+    <!-- CONTENEDOR OCULTO PARA GENERAR EL PDF -->
     <div id="pdf-container">
         <div class="pdf-header">
             <div class="pdf-logo"><img id="pdf-logo-img" src="" alt="Logo"></div>
@@ -352,7 +362,6 @@
                     <p><strong>Cliente:</strong> <span id="pdf-client-nombre"></span></p>
                     <p><strong>Dirección:</strong> <span id="pdf-client-dir"></span></p>
                     <p><span id="pdf-client-ciudad"></span></p>
-                    <p><strong>Teléfono:</strong> </p>
                 </div>
                 <div>
                     <p><strong>NIF:</strong> <span id="pdf-client-nif"></span></p>
@@ -409,8 +418,9 @@
         </div>
     </div>
 
+    <!-- JAVASCRIPT: LÓGICA DE LA APP -->
     <script>
-        // Inicializar Base de Datos
+        // Inicializar Base de Datos Local
         const db = new Dexie('EuromelDB');
         db.version(1).stores({
             config: 'key',
@@ -419,7 +429,6 @@
             cmrs: '++id, numero'
         });
 
-        let currentTab = 'inicio';
         let currentInvoiceLines = [];
         let appConfig = {};
 
@@ -435,7 +444,6 @@
                 document.getElementById(`view-${tab}`).classList.add('active');
                 document.getElementById(`nav-${tab}`).classList.add('active');
             }
-            currentTab = tab;
 
             if(tab === 'inicio') loadDashboard();
             if(tab === 'facturas') loadInvoices();
@@ -460,10 +468,10 @@
         async function loadConfigUI() {
             document.getElementById('conf-nombre').value = appConfig.nombre || 'Euromel One S.L.';
             document.getElementById('conf-nif').value = appConfig.nif || 'B75312736';
-            document.getElementById('conf-direccion').value = appConfig.direccion || '';
-            document.getElementById('conf-ciudad').value = appConfig.ciudad || '';
-            document.getElementById('conf-email').value = appConfig.email || '';
-            document.getElementById('conf-telefono').value = appConfig.telefono || '';
+            document.getElementById('conf-direccion').value = appConfig.direccion || 'Calle F de Crtra. de Farhana, 4A';
+            document.getElementById('conf-ciudad').value = appConfig.ciudad || '52005 - Melilla - Melilla';
+            document.getElementById('conf-email').value = appConfig.email || 'euromel2024@gmail.com';
+            document.getElementById('conf-telefono').value = appConfig.telefono || '622211186';
             document.getElementById('conf-iban').value = appConfig.iban || '';
             document.getElementById('conf-banco').value = appConfig.banco || '';
         }
@@ -473,7 +481,7 @@
             for(let f of fields) {
                 await db.config.put({ key: f, value: document.getElementById(`conf-${f}`).value });
             }
-            alert('Configuración guardada');
+            alert('Configuración guardada correctamente.');
             await loadConfig();
         }
 
@@ -504,7 +512,6 @@
                 </div>
             `).join('');
             
-            // Actualizar Select en factura
             const select = document.getElementById('fact-cliente');
             select.innerHTML = '<option value="">-- Seleccionar Cliente --</option>' + 
                 clients.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
@@ -533,6 +540,8 @@
                 provincia: document.getElementById('client-provincia').value,
                 email: document.getElementById('client-email').value
             };
+
+            if(!data.nombre) return alert('El nombre es obligatorio');
 
             if(id) { data.id = parseInt(id); await db.clientes.put(data); }
             else { await db.clientes.add(data); }
@@ -615,8 +624,8 @@
                             <option value="21" ${l.tax == 21 ? 'selected' : ''}>IVA 21%</option>
                         </select>
                     </td>
-                    <td class="line-total">0,00 €</td>
-                    <td><button type="button" onclick="removeLinea(${i})" style="color:red; border:none; background:none; font-weight:bold;">X</button></td>
+                    <td class="line-total" style="white-space: nowrap;">0,00 €</td>
+                    <td><button type="button" onclick="removeLinea(${i})" style="color:red; border:none; background:none; font-weight:bold; font-size:1.2rem;">X</button></td>
                 </tr>
             `).join('');
             currentInvoiceLines.forEach((_, i) => calculateLine(i));
@@ -667,7 +676,7 @@
                 total: totales.total
             };
 
-            if(!data.clienteId) return alert('Selecciona un cliente');
+            if(!data.clienteId) return alert('Selecciona un cliente primero');
 
             if(id) { data.id = parseInt(id); await db.facturas.put(data); }
             else { await db.facturas.add(data); }
@@ -701,7 +710,6 @@
             const client = await db.clientes.get(clientId);
             const totales = updateTotals();
 
-            // Rellenar plantilla PDF
             if(appConfig.logo) document.getElementById('pdf-logo-img').src = appConfig.logo;
             
             document.getElementById('pdf-client-nombre').innerText = client.nombre;
@@ -743,7 +751,6 @@
             document.getElementById('pdf-impuestos').innerText = formatMoney(totales.impuestos);
             document.getElementById('pdf-total').innerText = formatMoney(totales.total);
 
-            // Generar
             const element = document.getElementById('pdf-container');
             const opt = {
                 margin:       0,
@@ -756,7 +763,7 @@
             html2pdf().set(opt).from(element).save();
         }
 
-        // --- CMR (Lógica Básica) ---
+        // --- CMR ---
         async function loadCMRs() {
             const cmrs = await db.cmrs.toArray();
             document.getElementById('count-cmrs').innerText = cmrs.length;
@@ -796,38 +803,86 @@
                 peso: document.getElementById('cmr-peso').value
             };
             await db.cmrs.add(data);
-            alert('CMR guardado');
+            alert('CMR guardado correctamente');
             switchTab('cmr');
         }
 
-        // --- UTILS ---
+        // --- UTILIDADES Y BACKUP ---
         function formatMoney(num) {
             return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(num);
         }
 
-        async function exportData() {
+        async function exportDataZIP() {
             const data = {
                 config: await db.config.toArray(),
                 clientes: await db.clientes.toArray(),
                 facturas: await db.facturas.toArray(),
                 cmrs: await db.cmrs.toArray()
             };
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Euromel_Backup_${new Date().toISOString().split('T')[0]}.json`;
-            a.click();
+            
+            const zip = new JSZip();
+            zip.file("euromel_datos.json", JSON.stringify(data, null, 2));
+            zip.file("LEEME.txt", "Copia de seguridad de Euromel One.\nPara restaurar: abre la app, ve a Configuración -> Importar Copia y selecciona este archivo ZIP.\n\n¡Guarda este archivo en un lugar seguro (Google Drive, Email, etc.)!");
+            
+            zip.generateAsync({ type: "blob" }).then(function(content) {
+                const url = URL.createObjectURL(content);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Euromel_Backup_${new Date().toISOString().split('T')[0]}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            });
+        }
+
+        async function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const confirmMsg = "⚠️ ATENCIÓN: Esto borrará los datos actuales de la app en este dispositivo y los sustituirá por los de la copia de seguridad. ¿Continuar?";
+            if (!confirm(confirmMsg)) {
+                event.target.value = '';
+                return;
+            }
+
+            if (file.name.endsWith('.zip')) {
+                const zip = new JSZip();
+                zip.loadAsync(file).then(async function(contents) {
+                    const jsonStr = await contents.file("euromel_datos.json").async("string");
+                    await processImport(JSON.parse(jsonStr));
+                }).catch(err => alert('❌ Error al leer el ZIP: ' + err.message));
+            } else if (file.name.endsWith('.json')) {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    await processImport(JSON.parse(e.target.result));
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        async function processImport(data) {
+            try {
+                await db.config.clear();
+                await db.clientes.clear();
+                await db.facturas.clear();
+                await db.cmrs.clear();
+
+                if (data.config && data.config.length > 0) await db.config.bulkPut(data.config);
+                if (data.clientes && data.clientes.length > 0) await db.clientes.bulkPut(data.clientes);
+                if (data.facturas && data.facturas.length > 0) await db.facturas.bulkPut(data.facturas);
+                if (data.cmrs && data.cmrs.length > 0) await db.cmrs.bulkPut(data.cmrs);
+
+                alert('✅ Datos importados correctamente. La app se reiniciará.');
+                location.reload();
+            } catch (err) {
+                alert('❌ Error al importar los datos: ' + err.message);
+            }
         }
 
         // --- INICIALIZACIÓN ---
         window.onload = async () => {
             await loadConfig();
             loadDashboard();
-            // Registrar Service Worker para PWA
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('sw.js').catch(err => console.log('SW error', err));
-            }
         };
 
         async function loadDashboard() {
